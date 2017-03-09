@@ -20,7 +20,7 @@ from cv2 import COLOR_BGR2GRAY
 from cv2 import blur, Canny
 
 # numpy	- Impoty mean definition
-from numpy import mean
+# from numpy import mean
 
 # ROS imports
 from sensor_msgs.msg import Image
