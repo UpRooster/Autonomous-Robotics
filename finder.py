@@ -7,24 +7,14 @@ Created on Tues Mar 14 13:11
 @author: Liam T Berridge
 """
 
-# Imports
-import rospy, cv2, numpy
-
 #Import Definitions
-# cv2 Imports
-from cv2 import namedWindow, cvtColor, imshow
-from cv2 import destroyAllWindows, startWindowThread
-from cv2 import COLOR_BGR2GRAY
-from cv2 import blur, Canny
-# from numpy import mean
-# ROSpy Imports
-from sensor_msgs.msg import Image
+import rospy, cv2, cv_bridge, numpy
+from cv2 import *
 from cv_bridge import CvBridge
+from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float32
 
-class Vision:
-
+class Finder:
     def __init__(self):
 
         # Init dimension Variables
@@ -48,10 +38,12 @@ class Vision:
 
         # Init subscribers & image proc
         try:
+            print "NetTurtle Found!"
             self.image_sub = rospy.Subscriber("/camera/rgb/image_raw",Image,self.visioncall)
         except:
             print "No NetTurtle Found!"
         try:
+            print "SimTurtle Found!"
             self.image_sub = rospy.Subscriber("/turtlebot_1/camera/rgb/image_raw",Image,self.visioncall)
         except:
             print "No SimTurtle Found Either!"
@@ -86,10 +78,9 @@ class Vision:
         h, w, d = cv_image.shape
 
         search_top = 3*h/4
-        search_bot = (3*h/4)+(1*h/4)
-
+        search_bot = 3*h/4 + 20
         imgRange[0:search_top, 0:w] = 0
-        imgRange[search_bot:0, 0:w] = 0
+        imgRange[search_bot:h, 0:w] = 0
 
         imshow("Mask", imgRange)
         # Define object in view
@@ -98,10 +89,8 @@ class Vision:
             cx = int(M['m10']/M['m00'])
             cy = int(M['m01']/M['m00'])
             cv2.circle(cv_image, (cx, cy), 20, (0,0,255), -1)
-            
-rospy.init_node('vision')
-vision = Vision()
-rospy.spin()
+            err = cx - w/2
 
-#class mapping:
-#class motion:
+rospy.init_node('finder')
+finder = Finder()
+rospy.spin()
