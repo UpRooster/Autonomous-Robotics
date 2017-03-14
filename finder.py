@@ -40,14 +40,19 @@ class Finder:
         try:
             print "NetTurtle Found!"
             self.image_sub = rospy.Subscriber("/camera/rgb/image_raw",Image,self.visioncall)
+            self.cmd_vel_pub = rospy.Publisher('cmd_vel_mux/input/teleop',Twist, queue_size=1)
         except:
             print "No NetTurtle Found!"
         try:
             print "SimTurtle Found!"
             self.image_sub = rospy.Subscriber("/turtlebot_1/camera/rgb/image_raw",Image,self.visioncall)
+            self.cmd_vel_pub = rospy.Publisher('cmd_vel_mux/input/teleop',Twist, queue_size=1)
         except:
             print "No SimTurtle Found Either!"
             return "No Turtles! :("
+
+        # Init Movement
+        self.twist = Twist()
 
     def visioncall(self, data):
         # Image ROSpy to cv2 data
@@ -90,6 +95,11 @@ class Finder:
             cy = int(M['m01']/M['m00'])
             cv2.circle(cv_image, (cx, cy), 20, (0,0,255), -1)
             err = cx - w/2
+            self.twist.linear.x = 0.2
+            self.twist.linear.x = 0.2
+            self.twist.angular.z = -float(err) / 100
+            self.cmd_vel_pub.publish(self.twist)
+        cv2.waitKey(3)
 
 rospy.init_node('finder')
 finder = Finder()
