@@ -28,6 +28,7 @@ class Finder:
         namedWindow("Grayscale",1)
         namedWindow("Blur",1)
         namedWindow("Canny Edge",1)
+        namedWindow("Canny EdgeB",1)
         namedWindow("Target Range",1)
         namedWindow("Mask",1)
 
@@ -60,20 +61,22 @@ class Finder:
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
         # Img to grayscale
-        grayImg = cvtColor(cv_image, COLOR_BGR2HSV)
+        grayImg = cvtColor(cv_image, COLOR_BGR2GRAY)
         # print mean(gray_img) # WARNING CONSOLE SPAM
 
         # Apply Filters and Output Images to Windows
         imgBlur = blur(grayImg, (3,3))
         imgCanny = Canny(grayImg, 10, 200)
+        imgCannyB = Canny(imgBlur, 10, 200)
 
         imshow("Grayscale", grayImg)
         imshow("Blur", imgBlur)
         imshow("Canny Edge", imgCanny)
+        imshow("Canny EdgeB", imgCannyB)
 
         # Colour Detection (BGR) DETECTS RED/BROWN
-        lowThresh = numpy.array([10,10,10])
-        highThresh = numpy.array([255,255,250])
+        lowThresh = numpy.array([0,100,0])
+        highThresh = numpy.array([130,255,130])
 
         imgRange = cv2.inRange(cv_image, lowThresh, highThresh)
         imshow("Target Range", imgRange)
@@ -81,7 +84,7 @@ class Finder:
         # Define input & masking dimensions
         h, w, d = cv_image.shape
 
-        search_top = h/4
+        search_top = 3*h/4
         search_bot = 3*h/4 + 20
         imgRange[0:search_top, 0:w] = 0
         imgRange[search_bot:h, 0:w] = 0
