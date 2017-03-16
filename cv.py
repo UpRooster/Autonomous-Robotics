@@ -70,12 +70,18 @@ class image_converter:
         
 
     def callback(self, data):
-	# cv_image bridges from ROSPY to CV2 using "data" and BGR2 format
+        # Define Twist (Movement Call)        
+        T = Twist()
+        # Convert Rospy to Cv2 datatype (Get RAW Image)
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
-
-	# Convert cv_image to grayscale
-        hsvImg = cvtColor(cv_image, COLOR_BGR2HSV)
         imshow("Image window", cv_image)
+
+        # Convert BGR to HSV values
+        hsvImg = cvtColor(cv_image, COLOR_BGR2HSV)
+        
+        if (self.laserMin < 0.6):
+                T.linear.x = -0.4
+                print "Too Close!"
         
         if (self.colourMatch == 0 and self.colourFound[0] == 0): # Green
             lowerThresh = numpy.array([50,200,100])
@@ -95,7 +101,6 @@ class image_converter:
             
 	# Allowable Range (Detects colours inside threshold)
         img4 = cv2.inRange(hsvImg, lowerThresh, highrThresh)
-        T = Twist()
         
 	# Display target range image
         imshow("Target Range", img4)
@@ -113,9 +118,9 @@ class image_converter:
             # BEGIN CONTROL
             err = cx - w/2
             T.angular.z = -float(err) / 100
-            if (self.laserMin >= 1) | (isnan(self.laserMin)):
-                T.linear.x = 0.2
-            elif (self.laserMin < 0.8):
+            if (self.laserMin >= 1.75) | (isnan(self.laserMin)):
+                T.linear.x = 1
+            elif (self.laserMin < 0.8 and self.laserMin >= 0.6):
                 T.linear.x = -0.3
                 if (self.colourMatch == 0):
                     self.colourFound[0] = 1
@@ -134,13 +139,17 @@ class image_converter:
                     self.colourMatch = (self.colourMatch+1)%4
                     print "Found Red Object!"
             else:
-                T.linear.x = 0.3
+                T.linear.x = 0.45
+            print T.linear.x
+            print self.laserMin
         else:
             self.colourMatch = (self.colourMatch+1)%4
+            T.angular.z = 0.55
         self.twist_pub.publish(T)
         if (self.colourFound == [1, 1, 1, 1]):
             print "All Colours Found!"
             T.angular.z = 10
+            self.twist_pub.publish(T)
         
     # Definition for independant wheel movement
     def forward_kinematics(self, w_l, w_r):
