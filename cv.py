@@ -45,15 +45,16 @@ class image_converter:
         #self.image_sub = rospy.Subscriber("/video", Image, self.callback)
 	
 	# Subscribe to raw_img from turtlebot | call definition "callback"
+        self.laserArray = []
         self.image_sub = rospy.Subscriber("/turtlebot/camera/rgb/image_raw",Image,self.callback)
+        self.laser = rospy.Subscriber("/turtlebot/scan", LaserScan, self.laser_callback)
         self.wl = rospy.Subscriber("/turtlebot/wheel_left",  Float32)
         self.wr = rospy.Subscriber("/turtlebot/wheel_right", Float32)
-        self.laser = rospy.Subscriber("/turtlebot/scan", LaserScan, self.laser_callback)
         
-        self.laserMin = 999
+        
+        self.midLaser = 999
         self.colourMatch = 0
         self.colourFound = [0,0,0,0]
-        
         
 	# Create publishing to turtlebot (image + velocity)
         self.twist_pub = rospy.Publisher('/turtlebot/cmd_vel', Twist, queue_size=1)
@@ -78,10 +79,6 @@ class image_converter:
 
         # Convert BGR to HSV values
         hsvImg = cvtColor(cv_image, COLOR_BGR2HSV)
-        
-        if (self.laserMin < 0.6):
-                T.linear.x = -0.4
-                print "Too Close!"
         
         if (self.colourMatch == 0 and self.colourFound[0] == 0): # Green
             lowerThresh = numpy.array([50,200,100])
@@ -118,56 +115,60 @@ class image_converter:
             # BEGIN CONTROL
             err = cx - w/2
             T.angular.z = -float(err) / 100
-            if (self.laserMin >= 1.75) | (isnan(self.laserMin)):
+            if (self.laserArray[1] < 0.775):
+                T.angular.z = 2
+                rospy.sleep(1)
+            if (self.laserArray[len(self.laserArray)-1] < 0.775):
+                T.angular.z = -2
+                rospy.sleep(1)
+            if (self.midLaser >= 1.2) | (isnan(self.midLaser)):
                 T.linear.x = 1
-            elif (self.laserMin < 0.8 and self.laserMin >= 0.6):
-                T.linear.x = -0.3
-                if (self.colourMatch == 0):
+            if (self.midLaser < 1.2 and self.midLaser >= 0.75):
+                T.linear.x = 0.4
+                if (self.colourMatch == 0 and M['m00'] > 6000000):
                     self.colourFound[0] = 1
                     self.colourMatch = (self.colourMatch+1)%4
                     print "Found Green Object!"
-                elif (self.colourMatch == 1):
+                elif (self.colourMatch == 1 and M['m00'] > 6000000):
                     self.colourFound[1] = 1
                     self.colourMatch = (self.colourMatch+1)%4
                     print "Found Blue Object!"
-                elif (self.colourMatch == 2):
+                elif (self.colourMatch == 2 and M['m00'] > 6000000):
                     self.colourFound[2] = 1
                     self.colourMatch = (self.colourMatch+1)%4
                     print "Found Yellow Object!"
-                elif (self.colourMatch == 3):
+                elif (self.colourMatch == 3 and M['m00'] > 6000000):
                     self.colourFound[3] = 1
                     self.colourMatch = (self.colourMatch+1)%4
                     print "Found Red Object!"
-            else:
-                T.linear.x = 0.45
-            print T.linear.x
-            print self.laserMin
+            if (self.midLaser < 0.75):
+                print "Too Close!"
+                T.linear.x = -0.2
         else:
             self.colourMatch = (self.colourMatch+1)%4
-            T.angular.z = 0.55
+            T.linear.x = 1
+            
         self.twist_pub.publish(T)
         if (self.colourFound == [1, 1, 1, 1]):
             print "All Colours Found!"
             T.angular.z = 10
             self.twist_pub.publish(T)
         
-    # Definition for independant wheel movement
-    def forward_kinematics(self, w_l, w_r):
-	# Left Wheel
-        c_l = self.wheel_radius * w_l
-	# Right Wheel
-        c_r = self.wheel_radius * w_r
-	# Velocity calc
-        v = (c_l + c_r) / 2
-	# Acceleration calc
-        a = (c_l - c_r) / self.robot_radius
-        return (v, a)
+#    # Definition for independant wheel movement
+#    def forward_kinematics(self, w_l, w_r):
+#	# Left Wheel
+#        c_l = self.wheel_radius * w_l
+#	# Right Wheel
+#        c_r = self.wheel_radius * w_r
+#	# Velocity calc
+#        v = (c_l + c_r) / 2
+#	# Acceleration calc
+#        a = (c_l - c_r) / self.robot_radius
+#        return (v, a)
         
     def laser_callback(self,msg):
-        tempMin = msg.ranges[len(msg.ranges)/2]
-        self.laserMin = tempMin
-        print self.laserMin
-    
+        self.midLaser = msg.ranges[len(msg.ranges)/2]
+        self.laserArray = msg.ranges
         
 # Init ROSPY node
 rospy.init_node('image_converter')
