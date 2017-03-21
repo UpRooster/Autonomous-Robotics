@@ -24,7 +24,7 @@ import numpy
 from cv2 import *
 
 # numpy	- Impoty mean definition
-from numpy import mean
+from numpy import mean, nanmin
 
 # ROS imports
 from sensor_msgs.msg import Image, LaserScan
@@ -32,29 +32,33 @@ from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32
 
-class image_converter:
+class robotSeeker:
 #=========================================================================================================================
     def __init__(self):
         # Define Global Variables               ========
         self.midLaser = 999
         self.colourMatch = 0
         self.colourFound = [0,0,0,0]
+        self.roamCo = 0
+        self.M = []
         # Functions                             ========
         self.bridge = CvBridge()
-        self.T = self.Twist()
         startWindowThread()
         # Subscribers                           ========
         self.image_sub = rospy.Subscriber("/turtlebot/camera/rgb/image_raw",Image,self.callback)
         self.laser = rospy.Subscriber("/turtlebot/scan", LaserScan, self.laser_callback)
         # Publishers                            ========
         self.twist_pub = rospy.Publisher('/turtlebot/cmd_vel', Twist, queue_size=1)
+        self.T = Twist()
+        # Remove previous movement commands
+        self.T.angular.z = 0
+        self.T.linear.x = 0
+        self.twist_pub.publish(self.T)
         # Create image output windows           ========
         namedWindow("Image window", 1)
         namedWindow("Mask", 1)
 #=========================================================================================================================
     def callback(self, data):
-        # Define Twist (Movement Call)          ========
-        T = Twist()
         # Get Raw Camera Feed & Convert to HSV
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         hsvImg = cvtColor(cv_image, COLOR_BGR2HSV)
@@ -70,22 +74,25 @@ class image_converter:
         imshow("Image window", cv_image)
         imshow("Mask", maskImg)
 
-        M = cv2.moments(maskImg)
-        if M['m00'] > 0:
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-            cv2.circle(cv_image, (cx, cy), 20, (0,0,255), -1)
-            err = cx - w/2
-            T.angular.z = -float(err) / 100
-            self.colour_seek()
+        self.M = cv2.moments(maskImg)
+        if nanmin(self.laserArray,axis = 0) >= 1:
+            if self.M['m00'] > 100:
+                cx = int(self.M['m10']/self.M['m00'])
+                cy = int(self.M['m01']/self.M['m00'])
+                cv2.circle(cv_image, (cx, cy), 20, (0,0,255), -1)
+                err = cx - w/2
+                self.T.angular.z = -float(err) / 100
+                self.move_seek()
+            else:
+                self.colourMatch = (self.colourMatch+1)%4
+                self.move_roam()
         else:
-            self.colourMatch = (self.colourMatch+1)%4
-            self.roam_area()
-        self.twist_pub.publish(T)
+            self.avoidance()
+        self.twist_pub.publish(self.T)
         if (self.colourFound == [1, 1, 1, 1]):
             print "All Colours Found!"
-            T.angular.z = 10
-            self.twist_pub.publish(T)
+            self.T.angular.z = 0.3
+            self.twist_pub.publish(self.T)
 #=========================================================================================================================
     def laser_callback(self,msg):
         self.midLaser = msg.ranges[len(msg.ranges)/2]
@@ -109,28 +116,65 @@ class image_converter:
             self.lowerThresh = numpy.array([0,0,0]) # Black Mask
             self.highrThresh = numpy.array([0,0,0]) # Black Mask
 #=========================================================================================================================
-    def colour_seek(self):
-        print "Seeking!"
+    def colour_goals(self):
+        # Create and Mark goals with tracking
+        if (self.colourMatch == 0 and self.M['m00'] > 6000000):
+            self.colourFound[0] = 1
+            self.colourMatch = (self.colourMatch+1)%4
+            print "Found Green Object!"
+        elif (self.colourMatch == 1 and self.M['m00'] > 6000000):
+            self.colourFound[1] = 1
+            self.colourMatch = (self.colourMatch+1)%4
+            print "Found Blue Object!"
+        elif (self.colourMatch == 2 and self.M['m00'] > 6000000):
+            self.colourFound[2] = 1
+            self.colourMatch = (self.colourMatch+1)%4
+            print "Found Yellow Object!"
+        elif (self.colourMatch == 3 and self.M['m00'] > 6000000):
+            self.colourFound[3] = 1
+            self.colourMatch = (self.colourMatch+1)%4
+            print "Found Red Object!"
+#=========================================================================================================================
+    def move_seek(self):
+        #print "Seeking!"
         # Define Twist (Movement Call)          ========
-        T = self.Twist()
         # Move to Colour!
-        T.linear.x = 0.5
-        self.twist_pub.publish(T)
+        self.colour_goals()
+        self.T.linear.x = 0.4
+        self.twist_pub.publish(self.T)
 #=========================================================================================================================
-    def roam_area(self):
-        print "Roaming!"
-        # Define Twist (Movement Call)          ========
-        T = Twist()
-        #
-        
-        self.twist_pub.publish(T)
+    def move_roam(self):
+        #print "Roaming!"
+        self.T.linear.x = 0.6
+        self.T.angular.z = 0
+        self.twist_pub.publish(self.T)
+        self.roamCo = self.roamCo + 1
+        if self.roamCo > 140:
+            self.T.linear.x = 0
+            self.T.angular.z = 1.2
+        if self.roamCo > 260:
+            self.roamCo = 0
+            
 #=========================================================================================================================
-        
+    def avoidance(self):
+        #print "Too Close!"
+        mid = len(self.laserArray)/2
+        if nanmean(self.laserArray) < 1.75:
+                self.T.angular.z = -2.4
+                self.T.linear.x = 0
+        elif nansum(self.laserArray[:mid-40]) < nansum(self.laserArray[mid+40:]):
+            self.T.angular.z = 2
+            #print "Left!"
+        elif nansum(self.laserArray[:mid-40]) > nansum(self.laserArray[mid+40:]):
+            self.T.angular.z = -2
+            #print "Right!"
+        self.twist_pub.publish(self.T)
+#=========================================================================================================================            
 # Init ROSPY node
-rospy.init_node('image_converter')
+rospy.init_node('robotSeeker')
 
 # Shortened definition for class
-ic = image_converter()
+rs = robotSeeker()
 
 # Block interaction until node is shutdown
 rospy.spin()
