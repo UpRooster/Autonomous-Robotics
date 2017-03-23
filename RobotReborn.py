@@ -23,7 +23,7 @@ from numpy import mean, nanmin
 from sensor_msgs.msg import Image, LaserScan
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist, PoseStamped
-from std_msgs.msg import Float32
+from actionlib_msgs.msg import GoalStatusArray
 
 class robotSeeker:
 #=========================================================================================================================
@@ -42,6 +42,7 @@ class robotSeeker:
         # Subscribers                           ========
         self.image_sub = rospy.Subscriber("/turtlebot/camera/rgb/image_raw",Image,self.callback)
         self.laser = rospy.Subscriber("/turtlebot/scan", LaserScan, self.laser_callback)
+        self.status = rospy.Subscriber("/turtlebot/move_base/status", GoalStatusArray, self.status_call)
         # Publishers                            ========
         self.twist_pub = rospy.Publisher('/turtlebot/cmd_vel', Twist, queue_size=1)
         self.goal = rospy.Publisher('/turtlebot/move_base_simple/goal', PoseStamped, queue_size=1)
@@ -69,7 +70,7 @@ class robotSeeker:
         self.M = cv2.moments(maskImg)
         
         if nanmin(self.laserArray,axis = 0) >= 1:
-            if self.publish != False:
+            if self.publish == True:
                 if self.M['m00'] > 400:
                     cx = int(self.M['m10']/self.M['m00'])
                     cy = int(self.M['m01']/self.M['m00'])
@@ -79,10 +80,10 @@ class robotSeeker:
                 else:
                     self.colourMatch = (self.colourMatch+1)%4
                     self.move_roam()
-                self.colour_goals()
         
         else: 
             self.avoidance()
+        self.colour_goals()
         if (self.colourFound == [1, 1, 1, 1]):
             print "All Colours Found!"
             self.T.angular.z = 0.3
@@ -112,29 +113,28 @@ class robotSeeker:
 #=========================================================================================================================
     def colour_goals(self):
         # Create and Mark goals with tracking
-        if (self.colourMatch == 0 and self.M['m00'] > 4000000):
+        if (self.colourMatch == 0 and self.M['m00'] > 1200000):
             self.colourFound[0] = 1
             self.colourMatch = (self.colourMatch+1)%4
             print "Found Green Object!"
             self.publish = True
-        elif (self.colourMatch == 1 and self.M['m00'] > 4000000):
+        elif (self.colourMatch == 1 and self.M['m00'] > 1200000):
             self.colourFound[1] = 1
             self.colourMatch = (self.colourMatch+1)%4
             print "Found Blue Object!"
             self.publish = True
-        elif (self.colourMatch == 2 and self.M['m00'] > 4000000):
+        elif (self.colourMatch == 2 and self.M['m00'] > 1200000):
             self.colourFound[2] = 1
             self.colourMatch = (self.colourMatch+1)%4
             print "Found Yellow Object!"
             self.publish = True
-        elif (self.colourMatch == 3 and self.M['m00'] > 4000000):
+        elif (self.colourMatch == 3 and self.M['m00'] > 1200000):
             self.colourFound[3] = 1
             self.colourMatch = (self.colourMatch+1)%4
             print "Found Red Object!"
             self.publish = True
 #=========================================================================================================================
     def move_seek(self, err):
-        print "Seeking!"
         if self.publish == True:
             self.T.angular.z = -float(err) / 1000
             self.T.linear.x = 0
@@ -173,6 +173,10 @@ class robotSeeker:
                 self.T.angular.z = -2
                 self.twist_pub.publish(self.T)
 #=========================================================================================================================             
+    def status_call(self, stat):
+        goalstat = stat.status_list[len(stat.status_list)-1]
+        if goalstat.status == 3 | goalstat.status == 4:
+            self.publish = True
 # Init ROSPY node
 rospy.init_node('robotSeeker')
 
